@@ -1,9 +1,32 @@
-using backend.Models;
+using System.Text;
 using backend.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+builder.Services.AddControllers();
+builder.Services.AddAuthorization();
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        var issuer = builder.Configuration["Jwt:Issuer"] ?? "decklinq";
+        var audience = builder.Configuration["Jwt:Audience"] ?? "decklinq-users";
+        var key = builder.Configuration["Jwt:Key"] ?? "dev-local-secret-key-for-decklinq-mvp";
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = issuer,
+            ValidAudience = audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)),
+            ClockSkew = TimeSpan.Zero
+        };
+    });
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontendPolicy", policy =>
@@ -15,6 +38,7 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddSingleton<AuthService>();
 builder.Services.AddSingleton<DeckService>();
 
 var app = builder.Build();
@@ -25,33 +49,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("FrontendPolicy");
-
-app.MapGet("/api/health", () => Results.Ok(new
-{
-    status = "ok",
-    app = "DeckLinq",
-    timestamp = DateTimeOffset.UtcNow
-}));
-
-app.MapGet("/api/decks", (DeckService deckService) => Results.Ok(deckService.GetDecks()));
-
-app.MapGet("/api/decks/{id:int}", (int id, DeckService deckService) =>
-{
-    var deck = deckService.GetDeck(id);
-    return deck is null ? Results.NotFound() : Results.Ok(deck);
-});
-
-app.MapPost("/api/decks", (CreateDeckRequest request, DeckService deckService) =>
-{
-    if (string.IsNullOrWhiteSpace(request.Title))
-    {
-        return Results.BadRequest(new { message = "Deck title is required." });
-    }
-
-    var deck = deckService.CreateDeck(request.Title, request.Description ?? string.Empty, request.IsPublic);
-    return Results.Created($"/api/decks/{deck.Id}", deck);
-});
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
 
 app.Run();
-
-public record CreateDeckRequest(string Title, string? Description, bool IsPublic = false);

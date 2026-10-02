@@ -1,0 +1,91 @@
+export type AuthUser = {
+  id: number;
+  username: string;
+  createdAt: string;
+};
+
+export type Card = {
+  id: number;
+  deckId: number;
+  frontContent: string;
+  backContent: string;
+  hints?: string | null;
+  isLaTeX: boolean;
+  createdAt: string;
+};
+
+export type Deck = {
+  id: number;
+  userId: number;
+  title: string;
+  description: string;
+  isPublic: boolean;
+  cards: Card[];
+  cardCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+
+export function getStoredToken() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return localStorage.getItem("decklinq.token");
+}
+
+export function setStoredToken(token: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  localStorage.setItem("decklinq.token", token);
+}
+
+export function clearStoredToken() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  localStorage.removeItem("decklinq.token");
+}
+
+export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getStoredToken();
+
+  const response = await fetch(`${apiBase}${path}`, {
+    ...options,
+    headers: {
+      Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers ?? {}),
+    },
+  });
+
+  if (response.status === 401) {
+    clearStoredToken();
+    throw new Error("Unauthorized");
+  }
+
+  if (!response.ok) {
+    let message = "Request failed";
+    const rawBody = await response.text();
+
+    try {
+      const payload = JSON.parse(rawBody) as { message?: string; error?: string };
+      message = payload.message ?? payload.error ?? message;
+    } catch {
+      message = rawBody || message;
+    }
+
+    throw new Error(message);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return (await response.json()) as T;
+}
