@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, clearStoredToken, type AuthUser, type Deck } from "@/lib/api";
@@ -154,8 +153,17 @@ export default function DashboardPage() {
           </section>
 
           <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <h2 className="text-xl font-semibold">Your decks</h2>
+              <button
+                type="button"
+                onClick={() => router.push("/archive")}
+                className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-cyan-500/60 hover:bg-slate-900"
+              >
+                Archive
+              </button>
+            </div>
+            <div className="mt-3 flex items-center justify-between">
               <span className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-sm text-slate-300">
                 {decks.length} total
               </span>
@@ -172,11 +180,7 @@ export default function DashboardPage() {
             ) : (
               <div className="mt-6 space-y-4">
                 {decks.map((deck) => (
-                  <Link
-                    key={deck.id}
-                    href={`/decks/${deck.id}`}
-                    className="block rounded-2xl border border-slate-700 bg-slate-950/60 p-4 transition hover:border-cyan-500/60 hover:bg-slate-900"
-                  >
+                  <div key={deck.id} className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4 transition hover:border-cyan-500/60 hover:bg-slate-900">
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <h3 className="text-lg font-semibold text-white">{deck.title}</h3>
@@ -186,11 +190,27 @@ export default function DashboardPage() {
                         {deck.isPublic ? "Public" : "Private"}
                       </span>
                     </div>
-                    <div className="mt-4 flex items-center justify-between text-sm text-slate-300">
+                    <div className="mt-4 flex items-center justify-between gap-3 text-sm text-slate-300">
                       <span>{deck.cardCount} cards</span>
                       <span>Updated {new Date(deck.updatedAt).toLocaleDateString()}</span>
                     </div>
-                  </Link>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/decks/${deck.id}/study`)}
+                        className="rounded-xl bg-cyan-400 px-3 py-2 font-medium text-slate-950 transition hover:bg-cyan-300"
+                      >
+                        Start deck
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/decks/${deck.id}`)}
+                        className="rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-800"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

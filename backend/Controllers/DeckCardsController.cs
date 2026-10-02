@@ -28,7 +28,25 @@ public class DeckCardsController : ControllerBase
         }
 
         var deck = _deckService.GetDeckForUser(deckId, user.Id);
-        return deck is null ? NotFound() : Ok(deck.Cards);
+        if (deck is null)
+        {
+            return NotFound();
+        }
+
+        var cards = deck.Cards.Where(card => !card.IsArchived).ToList();
+        return Ok(cards);
+    }
+
+    [HttpGet("archive")]
+    public IActionResult GetArchivedCards()
+    {
+        var user = _authService.GetCurrentUser(User);
+        if (user is null)
+        {
+            return Unauthorized();
+        }
+
+        return Ok(_deckService.GetArchivedCardsForUser(user.Id));
     }
 
     [HttpPost("{deckId:int}/cards")]
@@ -62,6 +80,50 @@ public class DeckCardsController : ControllerBase
         return card is null ? NotFound() : Ok(card);
     }
 
+    [HttpPost("{deckId:int}/cards/{cardId:int}/archive")]
+    public IActionResult ArchiveCard(int deckId, int cardId)
+    {
+        var user = _authService.GetCurrentUser(User);
+        if (user is null)
+        {
+            return Unauthorized();
+        }
+
+        var card = _deckService.ArchiveCardFromDeck(deckId, cardId, user.Id);
+        return card is null ? NotFound() : Ok(card);
+    }
+
+    [HttpPost("archive/{cardId:int}/restore")]
+    public IActionResult RestoreCard(int cardId, [FromBody] RestoreCardRequest request)
+    {
+        var user = _authService.GetCurrentUser(User);
+        if (user is null)
+        {
+            return Unauthorized();
+        }
+
+        if (request.DeckId <= 0)
+        {
+            return BadRequest(new { message = "Destination deck is required." });
+        }
+
+        var card = _deckService.RestoreCardToDeck(cardId, user.Id, request.DeckId);
+        return card is null ? NotFound() : Ok(card);
+    }
+
+    [HttpDelete("archive/{cardId:int}")]
+    public IActionResult DeleteArchivedCard(int cardId)
+    {
+        var user = _authService.GetCurrentUser(User);
+        if (user is null)
+        {
+            return Unauthorized();
+        }
+
+        var removed = _deckService.DeleteArchivedCard(cardId, user.Id);
+        return removed ? NoContent() : NotFound();
+    }
+
     [HttpDelete("{deckId:int}/cards/{cardId:int}")]
     public IActionResult DeleteCard(int deckId, int cardId)
     {
@@ -77,4 +139,5 @@ public class DeckCardsController : ControllerBase
 
     public record CreateCardRequest(string FrontContent, string BackContent, string? Hints, bool IsLaTeX = false);
     public record UpdateCardRequest(string? FrontContent, string? BackContent, string? Hints, bool? IsLaTeX);
+    public record RestoreCardRequest(int DeckId);
 }

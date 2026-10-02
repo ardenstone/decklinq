@@ -69,6 +69,20 @@ export default function DeckPage() {
     }
   };
 
+  const handleArchiveCard = async (cardId: number) => {
+    setError(null);
+
+    try {
+      await apiFetch<Card>(`/api/decks/${deckId}/cards/${cardId}/archive`, {
+        method: "POST",
+      });
+
+      await loadDeck();
+    } catch (archiveError) {
+      setError(archiveError instanceof Error ? archiveError.message : "Unable to archive card.");
+    }
+  };
+
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-8 text-slate-100">
       <div className="mx-auto max-w-6xl">
@@ -77,8 +91,16 @@ export default function DeckPage() {
             <Link href="/dashboard" className="text-sm text-cyan-300 hover:text-cyan-200">← Back to dashboard</Link>
             <h1 className="mt-3 text-3xl font-bold">{deck?.title ?? "Deck details"}</h1>
           </div>
-          <div className="rounded-full border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm text-slate-200">
-            {deck ? `${deck.cardCount} cards` : "Loading..."}
+          <div className="flex items-center gap-3">
+            <Link
+              href={deck ? `/decks/${deck.id}/study` : "/dashboard"}
+              className="rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+            >
+              Start study
+            </Link>
+            <div className="rounded-full border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm text-slate-200">
+              {deck ? `${deck.cardCount} cards` : "Loading..."}
+            </div>
           </div>
         </header>
 
@@ -183,6 +205,16 @@ export default function DeckPage() {
                         Hint: {card.hints}
                       </div>
                     ) : null}
+
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleArchiveCard(card.id)}
+                        className="rounded-xl border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-200 transition hover:bg-amber-500/20"
+                      >
+                        Archive
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

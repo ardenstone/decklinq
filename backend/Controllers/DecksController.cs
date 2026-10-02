@@ -28,7 +28,16 @@ public class DecksController : ControllerBase
             return Unauthorized();
         }
 
-        return Ok(_deckService.GetDecksForUser(user.Id));
+        var decks = _deckService
+            .GetDecksForUser(user.Id)
+            .Select(deck =>
+            {
+                deck.Cards = deck.Cards.Where(card => !card.IsArchived).ToList();
+                return deck;
+            })
+            .ToList();
+
+        return Ok(decks);
     }
 
     [HttpGet("{id:int}")]
@@ -41,7 +50,13 @@ public class DecksController : ControllerBase
         }
 
         var deck = _deckService.GetDeckForUser(id, user.Id);
-        return deck is null ? NotFound() : Ok(deck);
+        if (deck is null)
+        {
+            return NotFound();
+        }
+
+        deck.Cards = deck.Cards.Where(card => !card.IsArchived).ToList();
+        return Ok(deck);
     }
 
     [HttpPost]

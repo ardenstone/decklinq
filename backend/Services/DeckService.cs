@@ -1,57 +1,40 @@
+using backend.Data;
 using backend.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace backend.Services;
 
 public class DeckService
 {
-    private readonly List<Deck> _decks =
-    [
-        new Deck
-        {
-            Id = 1,
-            UserId = 1,
-            Title = "Spanish Basics",
-            Description = "Core vocabulary for everyday conversations.",
-            IsPublic = true,
-            CreatedAt = DateTime.UtcNow.AddDays(-7),
-            UpdatedAt = DateTime.UtcNow.AddDays(-1),
-            Cards =
-            [
-                new Card { Id = 1, DeckId = 1, FrontContent = "Hola", BackContent = "Hello", Hints = "Greeting", IsLaTeX = false },
-                new Card { Id = 2, DeckId = 1, FrontContent = "Gracias", BackContent = "Thank you", Hints = "Polite phrase", IsLaTeX = false }
-            ]
-        },
-        new Deck
-        {
-            Id = 2,
-            UserId = 1,
-            Title = "CS Fundamentals",
-            Description = "Core concepts for interviews and revision.",
-            IsPublic = true,
-            CreatedAt = DateTime.UtcNow.AddDays(-9),
-            UpdatedAt = DateTime.UtcNow.AddDays(-2),
-            Cards =
-            [
-                new Card { Id = 3, DeckId = 2, FrontContent = "O(n)", BackContent = "Linear time complexity", Hints = "Algorithmic analysis", IsLaTeX = true },
-                new Card { Id = 4, DeckId = 2, FrontContent = "JWT", BackContent = "JSON Web Token", Hints = "Authentication", IsLaTeX = false }
-            ]
-        }
-    ];
+    private readonly AppDbContext _db;
+
+    public DeckService(AppDbContext db)
+    {
+        _db = db;
+    }
 
     public IReadOnlyList<Deck> GetDecksForUser(int userId) =>
-        _decks
+        _db.Decks
+            .Include(deck => deck.Cards)
             .Where(deck => deck.UserId == userId)
             .OrderByDescending(deck => deck.UpdatedAt)
             .ToList();
 
     public Deck? GetDeckForUser(int deckId, int userId) =>
-        _decks.FirstOrDefault(deck => deck.Id == deckId && deck.UserId == userId);
+        _db.Decks
+            .Include(deck => deck.Cards)
+            .FirstOrDefault(deck => deck.Id == deckId && deck.UserId == userId);
+
+    public IReadOnlyList<Card> GetArchivedCardsForUser(int userId) =>
+        _db.Cards
+            .Where(card => _db.Decks.Any(deck => deck.Id == card.DeckId && deck.UserId == userId) && card.IsArchived)
+            .OrderByDescending(card => card.ArchivedAt ?? card.CreatedAt)
+            .ToList();
 
     public Deck CreateDeck(int userId, string title, string description, bool isPublic)
     {
         var deck = new Deck
         {
-            Id = _decks.Count == 0 ? 1 : _decks.Max(d => d.Id) + 1,
             UserId = userId,
             Title = title.Trim(),
             Description = description.Trim(),
@@ -61,7 +44,8 @@ public class DeckService
             Cards = []
         };
 
-        _decks.Add(deck);
+        _db.Decks.Add(deck);
+        _db.SaveChanges();
         return deck;
     }
 
@@ -89,18 +73,20 @@ public class DeckService
         }
 
         deck.UpdatedAt = DateTime.UtcNow;
+        _db.SaveChanges();
         return deck;
     }
 
     public bool DeleteDeck(int deckId, int userId)
     {
-        var deck = _decks.FirstOrDefault(d => d.Id == deckId && d.UserId == userId);
+        var deck = _db.Decks.FirstOrDefault(d => d.Id == deckId && d.UserId == userId);
         if (deck is null)
         {
             return false;
         }
 
-        _decks.Remove(deck);
+        _db.Decks.Remove(deck);
+        _db.SaveChanges();
         return true;
     }
 
@@ -112,10 +98,8 @@ public class DeckService
             return null;
         }
 
-        var nextId = deck.Cards.Count == 0 ? 1 : deck.Cards.Max(card => card.Id) + 1;
         var card = new Card
         {
-            Id = nextId,
             DeckId = deck.Id,
             FrontContent = frontContent.Trim(),
             BackContent = backContent.Trim(),
@@ -126,6 +110,7 @@ public class DeckService
 
         deck.Cards.Add(card);
         deck.UpdatedAt = DateTime.UtcNow;
+        _db.SaveChanges();
         return card;
     }
 
@@ -137,7 +122,7 @@ public class DeckService
             return null;
         }
 
-        var card = deck.Cards.FirstOrDefault(c => c.Id == cardId);
+        var card = deck.Cards.FirstOrDefault(c => c.Id == cardId && !c.IsArchived);
         if (card is null)
         {
             return null;
@@ -164,6 +149,7 @@ public class DeckService
         }
 
         deck.UpdatedAt = DateTime.UtcNow;
+        _db.SaveChanges();
         return card;
     }
 
@@ -175,14 +161,95 @@ public class DeckService
             return false;
         }
 
-        var card = deck.Cards.FirstOrDefault(c => c.Id == cardId);
+        var card = deck.Cards.FirstOrDefault(c => c.Id == cardId && !c.IsArchived);
         if (card is null)
         {
             return false;
         }
 
         deck.Cards.Remove(card);
+        _db.Cards.Remove(card);
         deck.UpdatedAt = DateTime.UtcNow;
+        _db.SaveChanges();
+        return true;
+    }
+
+    public Card? ArchiveCardFromDeck(int deckId, int cardId, int userId)
+    {
+        var deck = GetDeckForUser(deckId, userId);
+        if (deck is null)
+        {
+            return null;
+        }
+
+        var card = deck.Cards.FirstOrDefault(c => c.Id == cardId && !c.IsArchived);
+        if (card is null)
+        {
+            return null;
+        }
+
+        card.IsArchived = true;
+        card.ArchivedAt = DateTime.UtcNow;
+        deck.UpdatedAt = DateTime.UtcNow;
+        _db.SaveChanges();
+        return card;
+    }
+
+    public Card? RestoreCardToDeck(int cardId, int userId, int targetDeckId)
+    {
+        var targetDeck = GetDeckForUser(targetDeckId, userId);
+        if (targetDeck is null)
+        {
+            return null;
+        }
+
+        var card = _db.Cards
+            .FirstOrDefault(c => c.Id == cardId && c.IsArchived && _db.Decks.Any(deck => deck.Id == c.DeckId && deck.UserId == userId));
+
+        if (card is null)
+        {
+            return null;
+        }
+
+        var sourceDeck = _db.Decks
+            .Include(deck => deck.Cards)
+            .FirstOrDefault(deck => deck.Id == card.DeckId && deck.UserId == userId);
+
+        if (sourceDeck is null)
+        {
+            return null;
+        }
+
+        var sourceCard = sourceDeck.Cards.FirstOrDefault(c => c.Id == cardId);
+        if (sourceCard is null)
+        {
+            return null;
+        }
+
+        sourceDeck.Cards.Remove(sourceCard);
+        sourceCard.DeckId = targetDeckId;
+        sourceCard.IsArchived = false;
+        sourceCard.ArchivedAt = null;
+        targetDeck.Cards.Add(sourceCard);
+
+        targetDeck.UpdatedAt = DateTime.UtcNow;
+        sourceDeck.UpdatedAt = DateTime.UtcNow;
+        _db.SaveChanges();
+        return sourceCard;
+    }
+
+    public bool DeleteArchivedCard(int cardId, int userId)
+    {
+        var card = _db.Cards
+            .FirstOrDefault(c => c.Id == cardId && c.IsArchived && _db.Decks.Any(deck => deck.Id == c.DeckId && deck.UserId == userId));
+
+        if (card is null)
+        {
+            return false;
+        }
+
+        _db.Cards.Remove(card);
+        _db.SaveChanges();
         return true;
     }
 }

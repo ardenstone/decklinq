@@ -11,6 +11,8 @@ export type Card = {
   backContent: string;
   hints?: string | null;
   isLaTeX: boolean;
+  isArchived?: boolean;
+  archivedAt?: string | null;
   createdAt: string;
 };
 

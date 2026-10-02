@@ -2,20 +2,23 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using backend.Data;
 using backend.Models;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 namespace backend.Services;
 
 public class AuthService
 {
-    private readonly List<User> _users = new();
+    private readonly AppDbContext _db;
     private readonly string _issuer;
     private readonly string _audience;
     private readonly SymmetricSecurityKey _securityKey;
 
-    public AuthService(IConfiguration configuration)
+    public AuthService(AppDbContext db, IConfiguration configuration)
     {
+        _db = db;
         _issuer = configuration["Jwt:Issuer"] ?? "decklinq";
         _audience = configuration["Jwt:Audience"] ?? "decklinq-users";
         var key = configuration["Jwt:Key"] ?? "dev-local-secret-key-for-decklinq-mvp";
@@ -26,27 +29,34 @@ public class AuthService
 
     public User? Register(string username, string password)
     {
-        if (_users.Any(user => string.Equals(user.Username, username, StringComparison.OrdinalIgnoreCase)))
+        var normalizedUsername = username.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedUsername))
+        {
+            return null;
+        }
+
+        if (_db.Users.Any(user => user.Username.ToLower() == normalizedUsername.ToLower()))
         {
             return null;
         }
 
         var user = new User
         {
-            Id = _users.Count == 0 ? 1 : _users.Max(existing => existing.Id) + 1,
-            Username = username.Trim(),
+            Username = normalizedUsername,
             PasswordHash = HashPassword(password),
             CreatedAt = DateTime.UtcNow
         };
 
-        _users.Add(user);
+        _db.Users.Add(user);
+        _db.SaveChanges();
         return user;
     }
 
     public User? Authenticate(string username, string password)
     {
-        var user = _users.FirstOrDefault(existing =>
-            string.Equals(existing.Username, username.Trim(), StringComparison.OrdinalIgnoreCase));
+        var normalizedUsername = username.Trim();
+        var user = _db.Users.FirstOrDefault(existing =>
+            existing.Username.ToLower() == normalizedUsername.ToLower());
 
         if (user is null || !VerifyPassword(password, user.PasswordHash))
         {
@@ -64,7 +74,7 @@ public class AuthService
             return null;
         }
 
-        return _users.FirstOrDefault(user => user.Id == userId);
+        return _db.Users.Find(userId);
     }
 
     public string CreateToken(User user)
@@ -89,7 +99,7 @@ public class AuthService
 
     private void SeedDemoUser()
     {
-        if (_users.Count != 0)
+        if (_db.Users.Any())
         {
             return;
         }
