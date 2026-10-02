@@ -17,7 +17,15 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-  # Add the pgweb layer below
+  flyway:
+    image: flyway/flyway:latest
+    container_name: flyway
+    volumes:
+      - ./database/migrations:/flyway/sql
+    command: -url=jdbc:postgresql://postgres:5432/decklinq -user=postgres -password=postgres migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
   pgweb:
     image: sosedoff/pgweb:latest
     container_name: pgweb
@@ -26,7 +34,8 @@ services:
     environment:
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/decklinq?sslmode=disable
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   backend:
     build:
@@ -36,6 +45,9 @@ services:
       DB_CONNECTION_URL: "Host=postgres;Database=decklinq;Username=postgres;Password=postgres"
       DB_USER: postgres
       DB_PASSWORD: postgres
+      FLYWAY_URL: "jdbc:postgresql://postgres:5432/decklinq"
+      FLYWAY_USER: postgres
+      FLYWAY_PASSWORD: postgres
       ASPNETCORE_ENVIRONMENT: Development
     depends_on:
       postgres:

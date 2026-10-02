@@ -1,11 +1,15 @@
 #!/bin/bash
 set -e
 
+FLYWAY_URL="${FLYWAY_URL:-jdbc:postgresql://postgres:5432/decklinq}"
+FLYWAY_USER="${FLYWAY_USER:-${DB_USER:-postgres}}"
+FLYWAY_PASSWORD="${FLYWAY_PASSWORD:-${DB_PASSWORD:-postgres}}"
+
 echo "Running database migrations via Flyway..."
 flyway \
-  -url="${DB_CONNECTION_URL}" \
-  -user="${DB_USER}" \
-  -password="${DB_PASSWORD}" \
+  -url="${FLYWAY_URL}" \
+  -user="${FLYWAY_USER}" \
+  -password="${FLYWAY_PASSWORD}" \
   -locations="filesystem:/app/migrations" \
   migrate
 

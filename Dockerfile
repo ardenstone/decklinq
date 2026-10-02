@@ -23,7 +23,7 @@ COPY --from=flyway/flyway:10.17.0 /flyway /opt/flyway
 ENV PATH="/opt/flyway:${PATH}"
 
 COPY --from=build /app/publish .
-COPY ./backend/Data/Migrations /app/migrations
+COPY ./database/migrations /app/migrations
 COPY ./entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 

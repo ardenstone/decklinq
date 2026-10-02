@@ -67,7 +67,7 @@ The API runs on:
 
 - `http://localhost:8080`
 
-The backend uses the database connection string in `DB_CONNECTION_URL` or falls back to a local PostgreSQL connection string.
+The backend uses the database connection string in `DB_CONNECTION_URL` or falls back to a local PostgreSQL connection string. Flyway runs against a JDBC URL via `FLYWAY_URL` when the app starts in Docker, and the SQL migration files live in `database/migrations`.
 
 ### Run the frontend
 
@@ -149,6 +149,6 @@ dotnet test decklinq.slnx --nologo -v q
 
 ## Notes
 
-- The backend uses EF Core and auto-applies migrations at startup.
+- The backend uses EF Core for ORM mapping, while Flyway manages schema changes through versioned SQL files in `database/migrations`.
 - JWT secrets are configured with local development defaults for the app's current MVP setup.
 - Docker-based development is the easiest way to get the Postgres dependency up and running quickly.
