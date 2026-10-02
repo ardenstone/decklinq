@@ -32,6 +32,20 @@ public class DeckServiceTests
     }
 
     [Fact]
+    public void UpdateDeck_UpdatesTitleDescriptionAndVisibility()
+    {
+        var service = CreateService();
+        var deck = service.CreateDeck(11, "Old title", "Old description", false);
+
+        var updated = service.UpdateDeck(deck.Id, 11, "New title", "New description", true);
+
+        Assert.NotNull(updated);
+        Assert.Equal("New title", updated.Title);
+        Assert.Equal("New description", updated.Description);
+        Assert.True(updated.IsPublic);
+    }
+
+    [Fact]
     public void AddCard_UpdateArchiveRestoreDelete_FollowsExpectedWorkflow()
     {
         var service = CreateService();

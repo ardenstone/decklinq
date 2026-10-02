@@ -91,3 +91,43 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 
   return (await response.json()) as T;
 }
+
+export async function downloadApiFile(path: string, fileName: string, options: RequestInit = {}) {
+  const token = getStoredToken();
+  const response = await fetch(`${apiBase}${path}`, {
+    ...options,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers ?? {}),
+    },
+  });
+
+  if (response.status === 401) {
+    clearStoredToken();
+    throw new Error("Unauthorized");
+  }
+
+  if (!response.ok) {
+    let message = "Request failed";
+    const rawBody = await response.text();
+
+    try {
+      const payload = JSON.parse(rawBody) as { message?: string; error?: string };
+      message = payload.message ?? payload.error ?? message;
+    } catch {
+      message = rawBody || message;
+    }
+
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}

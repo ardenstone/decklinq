@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Hosting;
@@ -209,6 +210,71 @@ public class ApiEndpointTests : IClassFixture<DecklinqWebApplicationFactory>
         Assert.Equal(HttpStatusCode.NoContent, deleteCardResponse.StatusCode);
     }
 
+    [Fact]
+    public async Task DeckImportExportEndpoints_SupportJsonAndCsvRoundTrips()
+    {
+        var username = $"import-export-{Guid.NewGuid():N}";
+        var password = "Password123!";
+        var token = await RegisterUserAndGetTokenAsync(username, password);
+
+        using var authClient = _factory.CreateClient();
+        authClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var deckResponse = await authClient.PostAsJsonAsync("/api/decks", new CreateDeckRequest("Import Deck", "Round-trip deck", false));
+        var deck = await deckResponse.Content.ReadFromJsonAsync<DeckResponse>();
+
+        Assert.Equal(HttpStatusCode.Created, deckResponse.StatusCode);
+        Assert.NotNull(deck);
+
+        var jsonImportBody = """
+        {
+          "title": "Import Deck",
+          "description": "Imported from JSON",
+          "isPublic": false,
+          "cards": [
+            { "frontContent": "Capital of France", "backContent": "Paris", "hints": "Eiffel Tower", "isLaTeX": false },
+            { "frontContent": "2 + 2", "backContent": "4", "hints": "Math", "isLaTeX": false }
+          ]
+        }
+        """;
+
+        var jsonImportResponse = await authClient.PostAsync($"/api/decks/{deck!.Id}/import?format=json", new StringContent(jsonImportBody, Encoding.UTF8, "application/json"));
+        var jsonImportPayload = await jsonImportResponse.Content.ReadFromJsonAsync<ImportDeckResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, jsonImportResponse.StatusCode);
+        Assert.NotNull(jsonImportPayload);
+        Assert.Equal(2, jsonImportPayload!.ImportedCardCount);
+
+        var exportJsonResponse = await authClient.GetAsync($"/api/decks/{deck.Id}/export?format=json");
+        var exportJsonPayload = await exportJsonResponse.Content.ReadFromJsonAsync<DeckExportResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, exportJsonResponse.StatusCode);
+        Assert.NotNull(exportJsonPayload);
+        Assert.Equal("Import Deck", exportJsonPayload!.Title);
+        Assert.Contains(exportJsonPayload.Cards, card => card.FrontContent == "Capital of France");
+
+        var csvImportBody = "frontContent,backContent,hints,isLaTeX\n" +
+            "Name of the largest ocean,Pacific,Think of the world, false\n" +
+            "Square root of 81,9,Common number, true\n";
+
+        var csvImportResponse = await authClient.PostAsync($"/api/decks/{deck.Id}/import?format=csv", new StringContent(csvImportBody, Encoding.UTF8, "text/csv"));
+        var csvImportPayload = await csvImportResponse.Content.ReadFromJsonAsync<ImportDeckResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, csvImportResponse.StatusCode);
+        Assert.NotNull(csvImportPayload);
+        Assert.Equal(2, csvImportPayload!.ImportedCardCount);
+
+        var exportCsvResponse = await authClient.GetAsync($"/api/decks/{deck.Id}/export?format=csv");
+        var exportCsvText = await exportCsvResponse.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, exportCsvResponse.StatusCode);
+        Assert.Contains("frontContent", exportCsvText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Capital of France", exportCsvText, StringComparison.OrdinalIgnoreCase);
+
+        var badCsvResponse = await authClient.PostAsync($"/api/decks/{deck.Id}/import?format=csv", new StringContent("frontContent,backContent\nOnlyFrontSide\n", Encoding.UTF8, "text/csv"));
+        Assert.Equal(HttpStatusCode.BadRequest, badCsvResponse.StatusCode);
+    }
+
     private async Task<string> RegisterUserAndGetTokenAsync(string username, string password)
     {
         var response = await _client.PostAsJsonAsync("/api/auth/register", new RegisterRequest(username, password));
@@ -232,4 +298,7 @@ public class ApiEndpointTests : IClassFixture<DecklinqWebApplicationFactory>
     private record CreateCardRequest(string FrontContent, string BackContent, string? Hints, bool IsLaTeX = false);
     private record UpdateCardRequest(string? FrontContent, string? BackContent, string? Hints, bool? IsLaTeX);
     private record RestoreCardRequest(int DeckId);
+    private record ImportDeckResponse(int ImportedCardCount);
+    private record DeckExportResponse(int Id, string Title, string Description, bool IsPublic, List<DeckExportCardResponse> Cards);
+    private record DeckExportCardResponse(int Id, string FrontContent, string BackContent, string? Hints, bool IsLaTeX, bool IsArchived, DateTime? ArchivedAt, DateTime CreatedAt);
 }
