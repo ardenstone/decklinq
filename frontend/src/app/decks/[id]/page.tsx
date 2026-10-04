@@ -26,6 +26,8 @@ export default function DeckPage() {
     backContent: "",
     hints: "",
     isLaTeX: false,
+    questionType: "basic",
+    metadata: "",
   });
 
   const loadDeck = useCallback(async () => {
@@ -122,15 +124,24 @@ export default function DeckPage() {
     setSubmitting(true);
 
     try {
+      const payload = {
+        frontContent: form.frontContent,
+        backContent: form.backContent,
+        hints: form.hints || null,
+        isLaTeX: form.isLaTeX,
+        questionType: form.questionType,
+        metadata: form.metadata && form.metadata.trim() !== "" ? form.metadata : null,
+      };
+
       await apiFetch<Card>(`/api/decks/${deckId}/cards`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
 
-      setForm({ frontContent: "", backContent: "", hints: "", isLaTeX: false });
+      setForm({ frontContent: "", backContent: "", hints: "", isLaTeX: false, questionType: "basic", metadata: "" });
       await loadDeck();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to add card.");
@@ -326,6 +337,38 @@ export default function DeckPage() {
                   onChange={(event) => setForm((current) => ({ ...current, backContent: event.target.value }))}
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
                   placeholder="Paris"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-300" htmlFor="questionType">
+                  Question type
+                </label>
+                <select
+                  id="questionType"
+                  value={form.questionType}
+                  onChange={(event) => setForm((current) => ({ ...current, questionType: event.target.value }))}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
+                >
+                  <option value="basic">Basic (front/back)</option>
+                  <option value="true-false">True / False</option>
+                  <option value="multiple-choice">Multiple choice</option>
+                  <option value="cloze">Fill-in-the-blank (cloze)</option>
+                  <option value="image">Image</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-300" htmlFor="metadata">
+                  Metadata (JSON, optional)
+                </label>
+                <textarea
+                  id="metadata"
+                  rows={3}
+                  value={form.metadata}
+                  onChange={(event) => setForm((current) => ({ ...current, metadata: event.target.value }))}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
+                  placeholder='{"choices":[{"label":"Paris","isCorrect":true},{"label":"Lyon","isCorrect":false}]}'
                 />
               </div>
 

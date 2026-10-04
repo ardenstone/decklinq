@@ -9,6 +9,9 @@ export type Card = {
   deckId: number;
   frontContent: string;
   backContent: string;
+  // New fields for question types
+  questionType?: string | null;
+  metadata?: Record<string, any> | null;
   hints?: string | null;
   isLaTeX: boolean;
   isArchived?: boolean;

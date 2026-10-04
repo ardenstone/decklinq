@@ -92,7 +92,7 @@ public class DeckService
         return true;
     }
 
-    public Card? AddCardToDeck(int deckId, int userId, string frontContent, string backContent, string? hints, bool isLaTeX)
+    public Card? AddCardToDeck(int deckId, int userId, string frontContent, string backContent, string? hints, bool isLaTeX, string? questionType = null, string? metadata = null)
     {
         var deck = GetDeckForUser(deckId, userId);
         if (deck is null)
@@ -107,6 +107,8 @@ public class DeckService
             BackContent = backContent.Trim(),
             Hints = hints?.Trim(),
             IsLaTeX = isLaTeX,
+            QuestionType = string.IsNullOrWhiteSpace(questionType) ? null : questionType,
+            Metadata = string.IsNullOrWhiteSpace(metadata) ? null : metadata,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -116,7 +118,7 @@ public class DeckService
         return card;
     }
 
-    public Card? UpdateCardInDeck(int deckId, int cardId, int userId, string? frontContent, string? backContent, string? hints, bool? isLaTeX)
+    public Card? UpdateCardInDeck(int deckId, int cardId, int userId, string? frontContent, string? backContent, string? hints, bool? isLaTeX, string? questionType = null, string? metadata = null)
     {
         var deck = GetDeckForUser(deckId, userId);
         if (deck is null)
@@ -148,6 +150,16 @@ public class DeckService
         if (isLaTeX.HasValue)
         {
             card.IsLaTeX = isLaTeX.Value;
+        }
+
+        if (questionType is not null)
+        {
+            card.QuestionType = string.IsNullOrWhiteSpace(questionType) ? null : questionType;
+        }
+
+        if (metadata is not null)
+        {
+            card.Metadata = string.IsNullOrWhiteSpace(metadata) ? null : metadata;
         }
 
         deck.UpdatedAt = DateTime.UtcNow;

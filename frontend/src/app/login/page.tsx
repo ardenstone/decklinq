@@ -7,8 +7,8 @@ import { apiFetch, setStoredToken } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("demo");
-  const [password, setPassword] = useState("password123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -56,7 +56,7 @@ export default function LoginPage() {
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none transition focus:border-cyan-400"
-              placeholder="demo"
+              placeholder="username"
               autoComplete="username"
             />
           </div>

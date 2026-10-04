@@ -7,8 +7,8 @@ import { apiFetch, setStoredToken } from "@/lib/api";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("trainer");
-  const [password, setPassword] = useState("password123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 

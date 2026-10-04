@@ -63,7 +63,7 @@ public class DeckCardsController : ControllerBase
             return BadRequest(new { message = "Front and back content are required." });
         }
 
-        var card = _deckService.AddCardToDeck(deckId, user.Id, request.FrontContent, request.BackContent, request.Hints, request.IsLaTeX);
+        var card = _deckService.AddCardToDeck(deckId, user.Id, request.FrontContent, request.BackContent, request.Hints, request.IsLaTeX, request.QuestionType, request.Metadata);
         return card is null ? NotFound() : Created($"/api/decks/{deckId}/cards/{card.Id}", card);
     }
 
@@ -76,7 +76,7 @@ public class DeckCardsController : ControllerBase
             return Unauthorized();
         }
 
-        var card = _deckService.UpdateCardInDeck(deckId, cardId, user.Id, request.FrontContent, request.BackContent, request.Hints, request.IsLaTeX);
+        var card = _deckService.UpdateCardInDeck(deckId, cardId, user.Id, request.FrontContent, request.BackContent, request.Hints, request.IsLaTeX, request.QuestionType, request.Metadata);
         return card is null ? NotFound() : Ok(card);
     }
 
@@ -137,7 +137,7 @@ public class DeckCardsController : ControllerBase
         return removed ? NoContent() : NotFound();
     }
 
-    public record CreateCardRequest(string FrontContent, string BackContent, string? Hints, bool IsLaTeX = false);
-    public record UpdateCardRequest(string? FrontContent, string? BackContent, string? Hints, bool? IsLaTeX);
+    public record CreateCardRequest(string FrontContent, string BackContent, string? Hints, bool IsLaTeX = false, string? QuestionType = null, string? Metadata = null);
+    public record UpdateCardRequest(string? FrontContent, string? BackContent, string? Hints, bool? IsLaTeX, string? QuestionType = null, string? Metadata = null);
     public record RestoreCardRequest(int DeckId);
 }
