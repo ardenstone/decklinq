@@ -5,6 +5,7 @@ using System.Text;
 using backend.Data;
 using backend.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.IdentityModel.Tokens;
 
 namespace backend.Services;
@@ -15,14 +16,16 @@ public class AuthService
     private readonly string _issuer;
     private readonly string _audience;
     private readonly SymmetricSecurityKey _securityKey;
+    private readonly IAppLogger _logger;
 
-    public AuthService(AppDbContext db, IConfiguration configuration)
+    public AuthService(AppDbContext db, IConfiguration configuration, IAppLogger? logger = null)
     {
         _db = db;
         _issuer = configuration["Jwt:Issuer"] ?? "decklinq";
         _audience = configuration["Jwt:Audience"] ?? "decklinq-users";
         var key = configuration["Jwt:Key"] ?? "dev-local-secret-key-for-decklinq-mvp";
         _securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
+        _logger = logger ?? new AppLogger(NullLogger<AppLogger>.Instance);
 
         SeedDemoUser();
     }
@@ -32,11 +35,13 @@ public class AuthService
         var normalizedUsername = username.Trim();
         if (string.IsNullOrWhiteSpace(normalizedUsername))
         {
+            _logger.LogWarning("auth-register-invalid-username", new { username = normalizedUsername });
             return null;
         }
 
         if (_db.Users.Any(user => user.Username.ToLower() == normalizedUsername.ToLower()))
         {
+            _logger.LogWarning("auth-register-duplicate-username", new { username = normalizedUsername });
             return null;
         }
 
@@ -49,6 +54,7 @@ public class AuthService
 
         _db.Users.Add(user);
         _db.SaveChanges();
+        _logger.LogInformation("auth-register-success", new { userId = user.Id, username = user.Username });
         return user;
     }
 
@@ -60,9 +66,11 @@ public class AuthService
 
         if (user is null || !VerifyPassword(password, user.PasswordHash))
         {
+            _logger.LogWarning("auth-login-failed", new { username = normalizedUsername });
             return null;
         }
 
+        _logger.LogInformation("auth-login-success", new { userId = user.Id, username = user.Username });
         return user;
     }
 

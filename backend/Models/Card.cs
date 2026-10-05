@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace backend.Models;
 
 public class Card
@@ -9,7 +11,7 @@ public class Card
     public string? Hints { get; set; }
     public bool IsLaTeX { get; set; }
     public QuestionType? QuestionType { get; set; }
-    public string? Metadata { get; set; }
+    public JsonElement? Metadata { get; set; }
     public bool IsArchived { get; set; }
     public DateTime? ArchivedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

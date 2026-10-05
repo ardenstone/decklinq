@@ -1,3 +1,71 @@
+export type QuestionType = "basic" | "true-false" | "multiple-choice" | "cloze" | "image";
+
+export function normalizeQuestionType(value: unknown): QuestionType {
+  const raw = typeof value === "string" ? value.trim() : value;
+
+  if (typeof raw === "number") {
+    switch (raw) {
+      case 0:
+        return "basic";
+      case 1:
+        return "true-false";
+      case 2:
+        return "multiple-choice";
+      case 3:
+        return "cloze";
+      case 4:
+        return "image";
+      default:
+        return "basic";
+    }
+  }
+
+  if (typeof raw === "string") {
+    const normalized = raw
+      .replace(/_/g, "-")
+      .replace(/([a-z])([A-Z])/g, "$1-$2")
+      .toLowerCase();
+
+    switch (normalized) {
+      case "basic":
+        return "basic";
+      case "true-false":
+      case "truefalse":
+        return "true-false";
+      case "multiple-choice":
+      case "multiplechoice":
+        return "multiple-choice";
+      case "cloze":
+        return "cloze";
+      case "image":
+        return "image";
+      default:
+        return "basic";
+    }
+  }
+
+  return "basic";
+}
+
+export function formatQuestionTypeLabel(value: unknown): string {
+  const normalized = normalizeQuestionType(value);
+  return normalized.replace("-", " ");
+}
+
+export type MultipleChoiceChoice = {
+  label: string;
+  isCorrect: boolean;
+};
+
+export type CardMetadata = {
+  choices?: MultipleChoiceChoice[];
+  correctAnswer?: boolean;
+  imageUrl?: string;
+  blankWord?: string;
+  answer?: string;
+  [key: string]: unknown;
+};
+
 export type AuthUser = {
   id: number;
   username: string;
@@ -9,9 +77,8 @@ export type Card = {
   deckId: number;
   frontContent: string;
   backContent: string;
-  // New fields for question types
-  questionType?: string | null;
-  metadata?: Record<string, any> | null;
+  questionType?: QuestionType | null;
+  metadata?: CardMetadata | null;
   hints?: string | null;
   isLaTeX: boolean;
   isArchived?: boolean;

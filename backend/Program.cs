@@ -1,5 +1,6 @@
 using System.Text;
 using backend.Data;
+using backend.Models;
 using backend.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -7,12 +8,16 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+
 var connectionString = builder.Configuration["DB_CONNECTION_URL"]
     ?? builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=localhost;Database=decklinq;Username=postgres;Password=postgres;Port=5432";
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString, npgsql => npgsql.MapEnum<QuestionType>("questiontype")));
 
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
@@ -47,10 +52,13 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddScoped<IAppLogger, AppLogger>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<DeckService>();
 
 var app = builder.Build();
+
+app.UseMiddleware<RequestLoggingMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {

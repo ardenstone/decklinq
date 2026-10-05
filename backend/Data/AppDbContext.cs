@@ -1,3 +1,4 @@
+using System.Text.Json;
 using backend.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -60,6 +61,15 @@ public class AppDbContext : DbContext
 
             entity.Property(card => card.Hints)
                 .HasMaxLength(2000);
+
+            entity.Property(card => card.QuestionType)
+                .HasColumnType("questiontype");
+
+            entity.Property(card => card.Metadata)
+                .HasColumnType("jsonb")
+                .HasConversion(
+                    value => value.HasValue ? value.Value.GetRawText() : null,
+                    dbValue => string.IsNullOrWhiteSpace(dbValue) ? null : JsonDocument.Parse(dbValue).RootElement);
 
             entity.HasIndex(card => new { card.DeckId, card.IsArchived, card.CreatedAt });
         });

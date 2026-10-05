@@ -46,7 +46,55 @@ export default function ArchivePage() {
   };
 
   useEffect(() => {
-    void loadArchive();
+    let active = true;
+
+    const load = async () => {
+      try {
+        const [deckData, archivedCardsData] = await Promise.all([
+          apiFetch<Deck[]>("/api/decks"),
+          apiFetch<Card[]>("/api/decks/archive"),
+        ]);
+
+        if (!active) {
+          return;
+        }
+
+        setDecks(deckData);
+        setArchivedCards(archivedCardsData);
+        setRestoreTargets((current) => {
+          const next = { ...current };
+          for (const card of archivedCardsData) {
+            if (!next[card.id]) {
+              const initialDeck = deckData[0]?.id ? String(deckData[0].id) : "";
+              next[card.id] = initialDeck;
+            }
+          }
+          return next;
+        });
+      } catch (loadError) {
+        if (!active) {
+          return;
+        }
+
+        if (loadError instanceof Error && loadError.message === "Unauthorized") {
+          clearStoredToken();
+          router.replace("/login");
+          return;
+        }
+
+        setError(loadError instanceof Error ? loadError.message : "Unable to load archive.");
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   const handleRestore = async (cardId: number) => {

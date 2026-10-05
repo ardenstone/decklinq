@@ -42,7 +42,45 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    void loadDashboard();
+    let active = true;
+
+    const load = async () => {
+      try {
+        const [userData, deckData] = await Promise.all([
+          apiFetch<AuthUser>("/api/users/me"),
+          apiFetch<Deck[]>("/api/decks"),
+        ]);
+
+        if (!active) {
+          return;
+        }
+
+        setUser(userData);
+        setDecks(deckData);
+      } catch (loadError) {
+        if (!active) {
+          return;
+        }
+
+        if (loadError instanceof Error && loadError.message === "Unauthorized") {
+          clearStoredToken();
+          router.replace("/login");
+          return;
+        }
+
+        setError(loadError instanceof Error ? loadError.message : "Unable to load your dashboard.");
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   const handleCreateDeck = async (event: FormEvent<HTMLFormElement>) => {

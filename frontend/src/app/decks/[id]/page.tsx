@@ -3,9 +3,174 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
-import { apiFetch, clearStoredToken, downloadApiFile, getStoredToken, type Card, type Deck } from "@/lib/api";
+import {
+  apiFetch,
+  clearStoredToken,
+  downloadApiFile,
+  formatQuestionTypeLabel,
+  getStoredToken,
+  normalizeQuestionType,
+  type Card,
+  type CardMetadata,
+  type Deck,
+  type QuestionType,
+} from "@/lib/api";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+
+type MetadataFormState = {
+  choices: Array<{ label: string; isCorrect: boolean }>;
+  correctAnswer: boolean;
+  imageUrl: string;
+  blankWord: string;
+  answer: string;
+};
+
+const createDefaultMetadata = (questionType: QuestionType = "basic"): MetadataFormState => {
+  switch (questionType) {
+    case "multiple-choice":
+      return {
+        choices: [
+          { label: "", isCorrect: false },
+          { label: "", isCorrect: false },
+          { label: "", isCorrect: false },
+        ],
+        correctAnswer: true,
+        imageUrl: "",
+        blankWord: "",
+        answer: "",
+      };
+    case "true-false":
+      return {
+        choices: [],
+        correctAnswer: true,
+        imageUrl: "",
+        blankWord: "",
+        answer: "",
+      };
+    case "image":
+      return {
+        choices: [],
+        correctAnswer: true,
+        imageUrl: "",
+        blankWord: "",
+        answer: "",
+      };
+    case "cloze":
+      return {
+        choices: [],
+        correctAnswer: true,
+        imageUrl: "",
+        blankWord: "",
+        answer: "",
+      };
+    case "basic":
+    default:
+      return {
+        choices: [],
+        correctAnswer: true,
+        imageUrl: "",
+        blankWord: "",
+        answer: "",
+      };
+  }
+};
+
+const buildMetadataPayload = (questionType: QuestionType, metadata: MetadataFormState): CardMetadata | null => {
+  switch (questionType) {
+    case "multiple-choice": {
+      const choices = metadata.choices
+        .map((choice) => ({
+          label: choice.label.trim(),
+          isCorrect: Boolean(choice.isCorrect),
+        }))
+        .filter((choice) => choice.label.length > 0);
+
+      return choices.length > 0 ? { choices } : null;
+    }
+    case "true-false":
+      return { correctAnswer: Boolean(metadata.correctAnswer) };
+    case "image":
+      return metadata.imageUrl.trim() ? { imageUrl: metadata.imageUrl.trim() } : null;
+    case "cloze": {
+      const payload: CardMetadata = {};
+      const blankWord = metadata.blankWord.trim();
+      const answer = metadata.answer.trim();
+      if (blankWord) {
+        payload.blankWord = blankWord;
+      }
+      if (answer) {
+        payload.answer = answer;
+      }
+      return Object.keys(payload).length > 0 ? payload : null;
+    }
+    case "basic":
+    default:
+      return null;
+  }
+};
+
+const renderCardMetadataSummary = (card: Card) => {
+  const questionType = normalizeQuestionType(card.questionType);
+
+  switch (questionType) {
+    case "multiple-choice": {
+      const choices = card.metadata?.choices ?? [];
+      if (choices.length === 0) {
+        return null;
+      }
+
+      return (
+        <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Choices</p>
+          <ul className="mt-2 space-y-1">
+            {choices.map((choice, index) => (
+              <li key={`${choice.label}-${index}`} className={choice.isCorrect ? "text-emerald-300" : "text-slate-300"}>
+                {choice.label} {choice.isCorrect ? "• correct" : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+    case "true-false": {
+      const correctAnswer = card.metadata?.correctAnswer ?? false;
+      return (
+        <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300">
+          Correct answer: <span className="font-semibold text-cyan-200">{correctAnswer ? "True" : "False"}</span>
+        </div>
+      );
+    }
+    case "image": {
+      const imageUrl = card.metadata?.imageUrl;
+      if (!imageUrl) {
+        return null;
+      }
+
+      return (
+        <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Image</p>
+          <a href={imageUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block text-cyan-300 hover:text-cyan-200">
+            {imageUrl}
+          </a>
+        </div>
+      );
+    }
+    case "cloze": {
+      const blankWord = card.metadata?.blankWord;
+      const answer = card.metadata?.answer;
+      return (
+        <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300">
+          {blankWord ? <div>Blank word: <span className="font-semibold text-cyan-200">{blankWord}</span></div> : null}
+          {answer ? <div className="mt-1">Answer: <span className="font-semibold text-emerald-300">{answer}</span></div> : null}
+        </div>
+      );
+    }
+    case "basic":
+    default:
+      return null;
+  }
+};
 
 export default function DeckPage() {
   const router = useRouter();
@@ -21,14 +186,14 @@ export default function DeckPage() {
     description: "",
     isPublic: false,
   });
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => ({
     frontContent: "",
     backContent: "",
     hints: "",
     isLaTeX: false,
-    questionType: "basic",
-    metadata: "",
-  });
+    questionType: "basic" as QuestionType,
+    metadata: createDefaultMetadata("basic"),
+  }));
 
   const loadDeck = useCallback(async () => {
     try {
@@ -124,13 +289,14 @@ export default function DeckPage() {
     setSubmitting(true);
 
     try {
+      const metadataPayload = buildMetadataPayload(form.questionType, form.metadata);
       const payload = {
         frontContent: form.frontContent,
         backContent: form.backContent,
         hints: form.hints || null,
         isLaTeX: form.isLaTeX,
         questionType: form.questionType,
-        metadata: form.metadata && form.metadata.trim() !== "" ? form.metadata : null,
+        metadata: metadataPayload,
       };
 
       await apiFetch<Card>(`/api/decks/${deckId}/cards`, {
@@ -141,7 +307,14 @@ export default function DeckPage() {
         body: JSON.stringify(payload),
       });
 
-      setForm({ frontContent: "", backContent: "", hints: "", isLaTeX: false, questionType: "basic", metadata: "" });
+      setForm({
+        frontContent: "",
+        backContent: "",
+        hints: "",
+        isLaTeX: false,
+        questionType: "basic",
+        metadata: createDefaultMetadata("basic"),
+      });
       await loadDeck();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to add card.");
@@ -224,6 +397,127 @@ export default function DeckPage() {
         type: "error",
         message: importError instanceof Error ? importError.message : "Unable to import card data.",
       });
+    }
+  };
+
+  const renderMetadataFields = () => {
+    switch (form.questionType) {
+      case "multiple-choice":
+        return (
+          <div className="space-y-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Choices</p>
+            {form.metadata.choices.map((choice, index) => (
+              <div key={`choice-${index}`} className="flex items-center gap-2">
+                <input
+                  value={choice.label}
+                  onChange={(event) => {
+                    const nextChoices = [...form.metadata.choices];
+                    nextChoices[index] = { ...nextChoices[index], label: event.target.value };
+                    setForm((current) => ({ ...current, metadata: { ...current.metadata, choices: nextChoices } }));
+                  }}
+                  className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
+                  placeholder={`Choice ${index + 1}`}
+                />
+                <label className="flex items-center gap-2 whitespace-nowrap text-xs text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={choice.isCorrect}
+                    onChange={(event) => {
+                      const nextChoices = [...form.metadata.choices];
+                      nextChoices[index] = { ...nextChoices[index], isCorrect: event.target.checked };
+                      setForm((current) => ({ ...current, metadata: { ...current.metadata, choices: nextChoices } }));
+                    }}
+                    className="h-4 w-4 rounded border-slate-700 bg-slate-950"
+                  />
+                  Correct
+                </label>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setForm((current) => ({
+                ...current,
+                metadata: { ...current.metadata, choices: [...current.metadata.choices, { label: "", isCorrect: false }] },
+              }))}
+              className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800"
+            >
+              Add choice
+            </button>
+          </div>
+        );
+      case "true-false":
+        return (
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Correct answer</p>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 text-sm text-slate-300">
+                <input
+                  type="radio"
+                  checked={form.metadata.correctAnswer === true}
+                  onChange={() => setForm((current) => ({ ...current, metadata: { ...current.metadata, correctAnswer: true } }))}
+                  className="h-4 w-4"
+                />
+                True
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-300">
+                <input
+                  type="radio"
+                  checked={form.metadata.correctAnswer === false}
+                  onChange={() => setForm((current) => ({ ...current, metadata: { ...current.metadata, correctAnswer: false } }))}
+                  className="h-4 w-4"
+                />
+                False
+              </label>
+            </div>
+          </div>
+        );
+      case "image":
+        return (
+          <div>
+            <label className="mb-2 block text-sm text-slate-300" htmlFor="metadata-image-url">
+              Image URL
+            </label>
+            <input
+              id="metadata-image-url"
+              value={form.metadata.imageUrl}
+              onChange={(event) => setForm((current) => ({ ...current, metadata: { ...current.metadata, imageUrl: event.target.value } }))}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
+              placeholder="https://example.com/image.jpg"
+            />
+          </div>
+        );
+      case "cloze":
+        return (
+          <div className="space-y-4">
+            <div>
+              <label className="mb-2 block text-sm text-slate-300" htmlFor="metadata-blank-word">
+                Blank word
+              </label>
+              <input
+                id="metadata-blank-word"
+                value={form.metadata.blankWord}
+                onChange={(event) => setForm((current) => ({ ...current, metadata: { ...current.metadata, blankWord: event.target.value } }))}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
+                placeholder="Paris"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm text-slate-300" htmlFor="metadata-answer">
+                Answer
+              </label>
+              <input
+                id="metadata-answer"
+                value={form.metadata.answer}
+                onChange={(event) => setForm((current) => ({ ...current, metadata: { ...current.metadata, answer: event.target.value } }))}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
+                placeholder="Paris"
+              />
+            </div>
+          </div>
+        );
+      case "basic":
+      default:
+        return null;
     }
   };
 
@@ -312,94 +606,89 @@ export default function DeckPage() {
             <section className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
               <h2 className="text-xl font-semibold">Add a card</h2>
               <form className="mt-6 space-y-4" onSubmit={handleAddCard}>
-              <div>
-                <label className="mb-2 block text-sm text-slate-300" htmlFor="frontContent">
-                  Front side
-                </label>
-                <textarea
-                  id="frontContent"
-                  rows={4}
-                  value={form.frontContent}
-                  onChange={(event) => setForm((current) => ({ ...current, frontContent: event.target.value }))}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
-                  placeholder="What is the capital of France?"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm text-slate-300" htmlFor="backContent">
-                  Back side
-                </label>
-                <textarea
-                  id="backContent"
-                  rows={4}
-                  value={form.backContent}
-                  onChange={(event) => setForm((current) => ({ ...current, backContent: event.target.value }))}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
-                  placeholder="Paris"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm text-slate-300" htmlFor="questionType">
-                  Question type
-                </label>
-                <select
-                  id="questionType"
-                  value={form.questionType}
-                  onChange={(event) => setForm((current) => ({ ...current, questionType: event.target.value }))}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
-                >
-                  <option value="basic">Basic (front/back)</option>
-                  <option value="true-false">True / False</option>
-                  <option value="multiple-choice">Multiple choice</option>
-                  <option value="cloze">Fill-in-the-blank (cloze)</option>
-                  <option value="image">Image</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm text-slate-300" htmlFor="metadata">
-                  Metadata (JSON, optional)
-                </label>
-                <textarea
-                  id="metadata"
-                  rows={3}
-                  value={form.metadata}
-                  onChange={(event) => setForm((current) => ({ ...current, metadata: event.target.value }))}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
-                  placeholder='{"choices":[{"label":"Paris","isCorrect":true},{"label":"Lyon","isCorrect":false}]}'
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm text-slate-300" htmlFor="hints">
-                  Hint (optional)
-                </label>
-                <input
-                  id="hints"
-                  value={form.hints}
-                  onChange={(event) => setForm((current) => ({ ...current, hints: event.target.value }))}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
-                  placeholder="Think of the Eiffel Tower"
-                />
-              </div>
-
-              <label className="flex items-center gap-3 text-sm text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={form.isLaTeX}
-                  onChange={(event) => setForm((current) => ({ ...current, isLaTeX: event.target.checked }))}
-                  className="h-4 w-4 rounded border-slate-700 bg-slate-950"
-                />
-                LaTeX content
-              </label>
-
-              {error ? (
-                <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
-                  {error}
+                <div>
+                  <label className="mb-2 block text-sm text-slate-300" htmlFor="frontContent">
+                    Front side
+                  </label>
+                  <textarea
+                    id="frontContent"
+                    rows={4}
+                    value={form.frontContent}
+                    onChange={(event) => setForm((current) => ({ ...current, frontContent: event.target.value }))}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
+                    placeholder="What is the capital of France?"
+                  />
                 </div>
-              ) : null}
+
+                <div>
+                  <label className="mb-2 block text-sm text-slate-300" htmlFor="backContent">
+                    Back side
+                  </label>
+                  <textarea
+                    id="backContent"
+                    rows={4}
+                    value={form.backContent}
+                    onChange={(event) => setForm((current) => ({ ...current, backContent: event.target.value }))}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
+                    placeholder="Paris"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm text-slate-300" htmlFor="questionType">
+                    Question type
+                  </label>
+                  <select
+                    id="questionType"
+                    value={form.questionType}
+                    onChange={(event) => {
+                      const nextQuestionType = event.target.value as QuestionType;
+                      setForm((current) => ({
+                        ...current,
+                        questionType: nextQuestionType,
+                        metadata: createDefaultMetadata(nextQuestionType),
+                      }));
+                    }}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
+                  >
+                    <option value="basic">Basic (front/back)</option>
+                    <option value="true-false">True / False</option>
+                    <option value="multiple-choice">Multiple choice</option>
+                    <option value="cloze">Fill-in-the-blank (cloze)</option>
+                    <option value="image">Image</option>
+                  </select>
+                </div>
+
+                {renderMetadataFields()}
+
+                <div>
+                  <label className="mb-2 block text-sm text-slate-300" htmlFor="hints">
+                    Hint (optional)
+                  </label>
+                  <input
+                    id="hints"
+                    value={form.hints}
+                    onChange={(event) => setForm((current) => ({ ...current, hints: event.target.value }))}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 outline-none focus:border-cyan-400"
+                    placeholder="Think of the Eiffel Tower"
+                  />
+                </div>
+
+                <label className="flex items-center gap-3 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={form.isLaTeX}
+                    onChange={(event) => setForm((current) => ({ ...current, isLaTeX: event.target.checked }))}
+                    className="h-4 w-4 rounded border-slate-700 bg-slate-950"
+                  />
+                  LaTeX content
+                </label>
+
+                {error ? (
+                  <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+                    {error}
+                  </div>
+                ) : null}
 
                 <button
                   type="submit"
@@ -472,7 +761,14 @@ export default function DeckPage() {
                 {deck.cards.map((card) => (
                   <div key={card.id} className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-xs uppercase tracking-[0.2em] text-cyan-300">Card {card.id}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs uppercase tracking-[0.2em] text-cyan-300">Card {card.id}</span>
+                        {normalizeQuestionType(card.questionType) !== "basic" ? (
+                          <span className="rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-cyan-200">
+                            {formatQuestionTypeLabel(card.questionType)}
+                          </span>
+                        ) : null}
+                      </div>
                       {card.isLaTeX ? <span className="rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-xs text-cyan-200">LaTeX</span> : null}
                     </div>
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -485,6 +781,7 @@ export default function DeckPage() {
                         <p className="mt-2 text-slate-100">{card.backContent}</p>
                       </div>
                     </div>
+                    {renderCardMetadataSummary(card)}
                     {card.hints ? (
                       <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300">
                         Hint: {card.hints}

@@ -3,16 +3,19 @@ using System.Text.Json;
 using backend.Data;
 using backend.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace backend.Services;
 
 public class DeckService
 {
     private readonly AppDbContext _db;
+    private readonly IAppLogger _logger;
 
-    public DeckService(AppDbContext db)
+    public DeckService(AppDbContext db, IAppLogger? logger = null)
     {
         _db = db;
+        _logger = logger ?? new AppLogger(NullLogger<AppLogger>.Instance);
     }
 
     public IReadOnlyList<Deck> GetDecksForUser(int userId) =>
@@ -48,6 +51,7 @@ public class DeckService
 
         _db.Decks.Add(deck);
         _db.SaveChanges();
+        _logger.LogInformation("deck-created", new { deckId = deck.Id, userId, title = deck.Title });
         return deck;
     }
 
@@ -76,6 +80,7 @@ public class DeckService
 
         deck.UpdatedAt = DateTime.UtcNow;
         _db.SaveChanges();
+        _logger.LogInformation("deck-updated", new { deckId = deck.Id, userId, title = deck.Title });
         return deck;
     }
 
@@ -89,6 +94,7 @@ public class DeckService
 
         _db.Decks.Remove(deck);
         _db.SaveChanges();
+        _logger.LogInformation("deck-deleted", new { deckId = deck.Id, userId });
         return true;
     }
 
@@ -100,6 +106,10 @@ public class DeckService
             return null;
         }
 
+        var parsedQuestionType = ParseQuestionType(questionType);
+        var parsedMetadata = ParseMetadata(metadata);
+        ValidateMetadata(parsedQuestionType, parsedMetadata);
+
         var card = new Card
         {
             DeckId = deck.Id,
@@ -107,8 +117,8 @@ public class DeckService
             BackContent = backContent.Trim(),
             Hints = hints?.Trim(),
             IsLaTeX = isLaTeX,
-            QuestionType = string.IsNullOrWhiteSpace(questionType) ? null : questionType,
-            Metadata = string.IsNullOrWhiteSpace(metadata) ? null : metadata,
+            QuestionType = parsedQuestionType,
+            Metadata = parsedMetadata,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -154,17 +164,99 @@ public class DeckService
 
         if (questionType is not null)
         {
-            card.QuestionType = string.IsNullOrWhiteSpace(questionType) ? null : questionType;
+            card.QuestionType = ParseQuestionType(questionType);
         }
 
         if (metadata is not null)
         {
-            card.Metadata = string.IsNullOrWhiteSpace(metadata) ? null : metadata;
+            var parsedMetadata = ParseMetadata(metadata);
+            ValidateMetadata(card.QuestionType, parsedMetadata);
+            card.Metadata = parsedMetadata;
         }
 
         deck.UpdatedAt = DateTime.UtcNow;
         _db.SaveChanges();
         return card;
+    }
+
+    private static QuestionType? ParseQuestionType(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return null;
+        }
+
+        return input.Trim() switch
+        {
+            "basic" or "Basic" => QuestionType.Basic,
+            "true-false" or "TrueFalse" or "truefalse" or "true_false" => QuestionType.TrueFalse,
+            "multiple-choice" or "MultipleChoice" or "multiplechoice" or "multiple_choice" => QuestionType.MultipleChoice,
+            "cloze" or "Cloze" => QuestionType.Cloze,
+            "image" or "Image" => QuestionType.Image,
+            _ => throw new ArgumentException($"Unsupported question type '{input}'.")
+        };
+    }
+
+    private static JsonElement? ParseMetadata(string? metadata)
+    {
+        if (string.IsNullOrWhiteSpace(metadata))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(metadata);
+            return document.RootElement.Clone();
+        }
+        catch (JsonException ex)
+        {
+            throw new ArgumentException("Metadata must be valid JSON.", nameof(metadata), ex);
+        }
+    }
+
+    private static void ValidateMetadata(QuestionType? questionType, JsonElement? metadata)
+    {
+        if (!metadata.HasValue || questionType is null)
+        {
+            return;
+        }
+
+        var value = metadata.Value;
+
+        switch (questionType.Value)
+        {
+            case QuestionType.MultipleChoice:
+                if (!value.TryGetProperty("choices", out var choices) || choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
+                {
+                    throw new ArgumentException("Multiple choice cards require a non-empty choices array in metadata.");
+                }
+                break;
+            case QuestionType.TrueFalse:
+                if (!value.TryGetProperty("correctAnswer", out var correctAnswer) ||
+                    (correctAnswer.ValueKind != JsonValueKind.True && correctAnswer.ValueKind != JsonValueKind.False))
+                {
+                    throw new ArgumentException("True/false cards require a boolean correctAnswer in metadata.");
+                }
+                break;
+            case QuestionType.Image:
+                if (!value.TryGetProperty("imageUrl", out var imageUrl) || string.IsNullOrWhiteSpace(imageUrl.GetString()))
+                {
+                    throw new ArgumentException("Image cards require an imageUrl in metadata.");
+                }
+                break;
+            case QuestionType.Cloze:
+                var hasBlankWord = value.TryGetProperty("blankWord", out var blankWord) && !string.IsNullOrWhiteSpace(blankWord.GetString());
+                var hasAnswer = value.TryGetProperty("answer", out var answer) && !string.IsNullOrWhiteSpace(answer.GetString());
+                if (!hasBlankWord && !hasAnswer)
+                {
+                    throw new ArgumentException("Cloze cards require a blankWord or answer in metadata.");
+                }
+                break;
+            case QuestionType.Basic:
+            default:
+                break;
+        }
     }
 
     public bool DeleteCardFromDeck(int deckId, int cardId, int userId)

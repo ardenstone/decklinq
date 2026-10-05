@@ -1,9 +1,88 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { apiFetch, clearStoredToken, type Card, type Deck } from "@/lib/api";
+import { apiFetch, clearStoredToken, normalizeQuestionType, type Card, type Deck } from "@/lib/api";
+
+const renderStudyMetadata = (card: Card | null, showAnswer: boolean) => {
+  if (!card) {
+    return null;
+  }
+
+  const questionType = normalizeQuestionType(card.questionType);
+
+  switch (questionType) {
+    case "multiple-choice": {
+      const choices = card.metadata?.choices ?? [];
+      if (choices.length === 0) {
+        return null;
+      }
+
+      return (
+        <div className="mt-4 space-y-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-200">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Options</p>
+          {choices.map((choice, index) => {
+            const isCorrect = choice.isCorrect;
+            const reveal = showAnswer && isCorrect;
+            return (
+              <div key={`${choice.label}-${index}`} className={reveal ? "rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-emerald-200" : "rounded-lg border border-slate-700 bg-slate-950/40 px-3 py-2"}>
+                {choice.label}
+                {showAnswer && isCorrect ? " • correct" : ""}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+    case "true-false": {
+      const correctAnswer = card.metadata?.correctAnswer ?? false;
+      return (
+        <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-200">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Answer</p>
+          <p className="mt-2 font-medium text-cyan-200">{showAnswer ? (correctAnswer ? "True" : "False") : "Choose True or False"}</p>
+        </div>
+      );
+    }
+    case "image": {
+      const imageUrl = card.metadata?.imageUrl;
+      if (!showAnswer || !imageUrl) {
+        return (
+          <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-300">
+            {showAnswer ? "No image available." : "Image prompt coming up."}
+          </div>
+        );
+      }
+
+      return (
+        <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-200">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Image answer</p>
+          <div className="relative mt-3 h-64 w-full overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
+            <Image src={imageUrl} alt={card.frontContent} fill unoptimized className="object-contain" />
+          </div>
+        </div>
+      );
+    }
+    case "cloze": {
+      const blankWord = card.metadata?.blankWord;
+      const answer = card.metadata?.answer;
+      return (
+        <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-200">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Cloze</p>
+          <p className="mt-2">{showAnswer ? (answer ?? blankWord ?? "—") : (blankWord ? `Blank: ${blankWord}` : "Fill in the missing word")}</p>
+        </div>
+      );
+    }
+    case "basic":
+    default:
+      return showAnswer ? (
+        <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-200">
+          {card.backContent}
+        </div>
+      ) : null;
+  }
+};
 
 export default function StudyPage() {
   const router = useRouter();
@@ -15,32 +94,48 @@ export default function StudyPage() {
   const [showAnswer, setShowAnswer] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadDeck = async () => {
-    try {
-      const data = await apiFetch<Deck>(`/api/decks/${deckId}`);
-      setDeck(data);
-      setCurrentIndex(0);
-      setShowAnswer(false);
-    } catch (loadError) {
-      if (loadError instanceof Error && loadError.message === "Unauthorized") {
-        clearStoredToken();
-        router.replace("/login");
-        return;
-      }
-
-      setError(loadError instanceof Error ? loadError.message : "Unable to load study deck.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (!Number.isFinite(deckId)) {
       router.replace("/dashboard");
       return;
     }
 
-    void loadDeck();
+    let active = true;
+
+    const load = async () => {
+      try {
+        const data = await apiFetch<Deck>(`/api/decks/${deckId}`);
+        if (!active) {
+          return;
+        }
+
+        setDeck(data);
+        setCurrentIndex(0);
+        setShowAnswer(false);
+      } catch (loadError) {
+        if (!active) {
+          return;
+        }
+
+        if (loadError instanceof Error && loadError.message === "Unauthorized") {
+          clearStoredToken();
+          router.replace("/login");
+          return;
+        }
+
+        setError(loadError instanceof Error ? loadError.message : "Unable to load study deck.");
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      active = false;
+    };
   }, [deckId, router]);
 
   const cards = deck?.cards ?? [];
@@ -158,12 +253,13 @@ export default function StudyPage() {
             <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-6">
               <p className="mb-3 text-xs uppercase tracking-[0.25em] text-slate-500">Front</p>
               <p className="text-2xl font-semibold text-white">{currentCard?.frontContent}</p>
+              {currentCard ? renderStudyMetadata(currentCard, false) : null}
             </div>
 
             <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-950/60 p-6">
               <p className="mb-3 text-xs uppercase tracking-[0.25em] text-slate-500">Answer</p>
               {showAnswer ? (
-                <p className="text-xl text-slate-100">{currentCard?.backContent}</p>
+                <div>{renderStudyMetadata(currentCard, true)}</div>
               ) : (
                 <p className="text-slate-500">Reveal the answer when you are ready.</p>
               )}

@@ -1,28 +1,61 @@
-# This workflow will build a .NET project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
+# This workflow builds and tests the .NET app against a PostgreSQL instance
+# and applies the Flyway migrations before running the suite.
 
 name: .NET
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: decklinq
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d decklinq"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DB_CONNECTION_URL: Host=localhost;Database=decklinq;Username=postgres;Password=postgres;Port=5432
+      ConnectionStrings__DefaultConnection: Host=localhost;Database=decklinq;Username=postgres;Password=postgres;Port=5432
+
     steps:
-    - uses: actions/checkout@v4
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 10.0.x
-    - name: Restore dependencies
-      run: dotnet restore
-    - name: Build
-      run: dotnet build --no-restore
-    - name: Test
-      run: dotnet test --no-build --verbosity normal
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Apply Flyway migrations
+        run: |
+          docker run --rm \
+            --network host \
+            -v "$PWD/database/migrations:/flyway/sql" \
+            flyway/flyway:latest \
+            -url=jdbc:postgresql://localhost:5432/decklinq \
+            -user=postgres \
+            -password=postgres \
+            migrate
+
+      - name: Build
+        run: dotnet build --no-restore
+
+      - name: Test
+        run: dotnet test --no-build --verbosity normal
